@@ -1,0 +1,6 @@
+[submodule "auth"]
+	path = auth
+	url = https://gitlab.com/veloren/auth.git
+[submodule "veloren"]
+	path = veloren
+	url = https://gitlab.com/veloren/veloren.git
