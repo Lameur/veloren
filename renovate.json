@@ -1,21 +1,19 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended"
-  ],
-  "allowPlugins": true,
-  "vulnerabilityAlerts": {
-    "groupName": null,
-    "schedule": [],
-    "dependencyDashboardApproval": false,
-    "minimumReleaseAge": null,
-    "rangeStrategy": "update-lockfile",
-    "commitMessageSuffix": "[SECURITY]",
-    "branchTopic": "{{{datasource}}}-{{{depNameSanitized}}}-vulnerability",
-    "prCreation": "immediate",
-    "vulnerabilityFixStrategy": "lowest"
-  },
-  "updatePinnedDependencies": false,
-  "updateLockFiles": true,
-  "versioning": "docker"
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended"],
+	"allowPlugins": true,
+	"vulnerabilityAlerts": {
+		"groupName": null,
+		"schedule": [],
+		"dependencyDashboardApproval": false,
+		"minimumReleaseAge": null,
+		"rangeStrategy": "update-lockfile",
+		"commitMessageSuffix": "[SECURITY]",
+		"branchTopic": "{{{datasource}}}-{{{depNameSanitized}}}-vulnerability",
+		"prCreation": "immediate",
+		"vulnerabilityFixStrategy": "lowest"
+	},
+	"updatePinnedDependencies": false,
+	"updateLockFiles": true,
+	"versioning": "docker"
 }

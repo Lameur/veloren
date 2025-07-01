@@ -1,0 +1,11 @@
+{
+	"recommendations": [
+		"docker.docker",
+		"jeff-hykin.better-dockerfile-syntax",
+		"hverlin.mise-vscode",
+		"editorconfig.editorconfig",
+		"ms-azuretools.vscode-containers",
+		"redhat.vscode-yaml"
+	],
+	"unwantedRecommendations": ["ms-azuretools.vscode-docker"]
+}

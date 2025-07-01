@@ -12,6 +12,7 @@
 </a>
 
 ## What is this repo ?
+
 This is a simple repo that take veloren code and make images, why, because I found that the `server-cli` image is not working and also not build for ARM.
 
 ## Welcome to Veloren!
@@ -19,7 +20,6 @@ This is a simple repo that take veloren code and make images, why, because I fou
 Veloren is an action-adventure RPG game set in a vast fantasy world. It is inspired by other games such as Cube World, The Legend of Zelda: Breath of the Wild, Dwarf Fortress and Minecraft.
 
 Veloren is in active development and enjoys a flourishing player community.
-
 
 ### Official social media and websites
 

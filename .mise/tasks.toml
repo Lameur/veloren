@@ -1,0 +1,39 @@
+#:schema https://github.com/jdx/mise/blob/main/schema/mise-task.json
+
+[lint]
+description = "Lint action"
+run = ['actionlint']
+hide = false
+alias = 'la'
+
+[dummy]
+description = 'dummy commit'
+run = ['git commit --allow-empty -m "Trigger Build"', 'git push']
+hide = true
+alias = 'gd'
+
+[commit]
+description = 'Commit change'
+run = 'ruby scripts/commit.rb'
+alias = 'gc'
+
+[push]
+description = 'Push change'
+depends = 'commit'
+run = 'git push'
+alias = 'gp'
+
+[build-server]
+description = "Build the project with docker"
+run = "./build.sh --build server-cli"
+alias = "bs"
+
+[build-auth]
+description = "Build the project with docker"
+run = "./build.sh --build auth"
+alias = "ba"
+
+[build-all]
+description = "Build the project with docker"
+run = "./build.sh --build all"
+alias = "ba"

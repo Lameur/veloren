@@ -1,0 +1,4 @@
+name: Veloren
+
+services:
+  nix:

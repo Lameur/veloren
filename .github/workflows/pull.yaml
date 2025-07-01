@@ -1,0 +1,29 @@
+---
+"on":
+  schedule:
+    - cron: "0 0 * * *"
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      # Permissions for the build job, which can be overridden at the step level
+      # The permissions are set to allow the job to write to the GitHub Container Registry (GHCR) and read from the repository.
+      attestations: write
+      actions: write
+      checks: read
+      contents: write
+      deployments: none
+      id-token: write
+      issues: read
+      discussions: read
+      packages: none
+      pages: none
+      pull-requests: write
+      repository-projects: write
+      security-events: read
+      statuses: write
+    steps:
+      - name: install deps
+        run: apt install git git-lfs
+      - name: pull
+        run: git submodule update --recursive

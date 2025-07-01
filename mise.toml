@@ -1,0 +1,25 @@
+#:schema https://github.com/jdx/mise/blob/main/schema/mise.json
+min_version = "2025.2.8"
+
+[settings]
+experimental = false
+
+[env]
+# supports arbitrary env vars so mise can be used like direnv/dotenv
+PROJECT_NAME = "{{ cwd | basename }}"
+PROJECT_ROOT = "{{ cwd }}"
+VELOREN_USERDATA_STRATEGY = "system"
+BUILDX_BAKE_ENTITLEMENTS_FS = "0"
+
+[tools]
+ruby = "latest"
+gum = "latest"
+actionlint = "latest"
+action-validator = "latest"
+act = "latest"
+docker-cli = "latest"
+rust = "stable"
+usage = "latest"
+
+[task_config]
+includes = ["./.mise/tasks.toml","mise-tasks"]
