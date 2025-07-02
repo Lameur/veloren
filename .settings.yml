@@ -1,10 +1,6 @@
 emoji: true
 auto_stage: true
-scopes:
-  - "docker"
-  - "ci"
-  - "submodule"
-  - "other"
+scopes: ["docker", "ci", "submodule", "other"]
 scope_case: "camelCase"
 max_summary_length: 72
 max_line_length: 72

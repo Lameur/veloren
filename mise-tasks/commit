@@ -28,7 +28,7 @@
 #USAGE flag "--co-author <author>" help="Add co-author to commit"
 #USAGE flag "--amend" help="Amend the last commit"
 #USAGE flag "--gpg-sign" help="GPG sign the commit"
-#USAGE flag "--list" help="List available commit types" long_help="List all available commit types for selection"
+
 
 require 'shellwords'
 require 'optparse'
@@ -141,8 +141,6 @@ class ConventionalCommit
     check_dependencies
     check_git_repo
 
-    return list_commit_types if @options[:list]
-
     execute_commit_flow
   end
 
@@ -247,9 +245,7 @@ class ConventionalCommit
         @options[:gpg_sign] = true
       end
 
-      opts.on('--list', 'List available commit types') do
-        @options[:list] = true
-      end
+
     end.parse!
   end
 
@@ -267,6 +263,8 @@ class ConventionalCommit
       puts "  brew install gum"
       puts "  # or"
       puts "  go install github.com/charmbracelet/gum@latest"
+			puts "  # or"
+      puts "  mise u -g gum"
       exit 1
     end
   end
@@ -278,15 +276,6 @@ class ConventionalCommit
       puts "🚨 Error: Not in a git repository"
       exit 1
     end
-  end
-
-  def list_commit_types
-    puts "📋 Available commit types (Conventional Commits v1.0.0):\n\n"
-    COMMIT_TYPES.each do |type, info|
-      puts "  #{info[:emoji]} #{type.ljust(10)} - #{info[:desc]}"
-    end
-    puts "\n📖 Specification: https://www.conventionalcommits.org/en/v1.0.0/"
-    puts
   end
 
   def execute_commit_flow
@@ -382,7 +371,7 @@ class ConventionalCommit
     end
 
     choice = run_gum("choose \"#{choices.join('" "')}\" --header \"🏷️  Commit type (Conventional Commits):\"")
-    choice.split(' ').first.gsub(/[^a-z]/, '')
+    (choice.to_s.split(' ').first || '').gsub(/[^a-z]/, '') # Extract type from choice
   end
 
   def get_scope
