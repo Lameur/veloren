@@ -1,0 +1,17 @@
+emoji: true
+auto_stage: true
+scopes:
+  - "docker"
+  - "ci"
+  - "submodule"
+  - "other"
+scope_case: "camelCase"
+max_summary_length: 72
+max_line_length: 72
+confirm_by_default: false
+breaking_change_footer: false
+template:
+  hotfix:
+    type: fix
+    scope: critical
+    breaking: false
