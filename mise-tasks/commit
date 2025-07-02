@@ -1,0 +1,668 @@
+#!/usr/bin/env ruby
+
+#MISE description="Advanced conventional commit tool with smart features"
+#MISE alias="gc"
+
+#USAGE flag "-h --help" help="Display this help message"
+#USAGE flag "-t --type <type>" help="Type of commit" long_help="Select the type of commit from the list" {
+#USAGE   choices "fix" "feat" "docs" "style" "refactor" "test" "chore" "revert" "ci" "build" "perf"
+#USAGE }
+#USAGE flag "-s --scope <scope>" help="Optional scope for the commit" long_help="Specify a scope for the commit message"
+#USAGE flag "-m --message <message>" help="Commit message summary" long_help="Provide a summary for the commit message"
+#USAGE flag "-d --description <description>" help="Detailed description of the commit" long_help="Provide a detailed description for the commit message"
+#USAGE flag "-c --confirm" help="Confirm commit" long_help="Confirm the commit before executing"
+#USAGE flag "-p --prompt" help="Prompt for commit message details" long_help="Prompt the user for commit message details interactively"
+#USAGE flag "-v --verbose" help="Verbose output" long_help="Enable verbose output for debugging purposes"
+#USAGE flag "--breaking <yes/no>" help="Indicate if this is a breaking change" long_help="Mark the commit as a breaking change" default="no" {
+#USAGE   choices "yes" "no"
+#USAGE }
+#USAGE flag "--summary <summary>" help="Summary of the commit" long_help="Provide a summary for the commit message"
+#USAGE flag "--footer <footer>" help="Footer for the commit message" long_help="Add a footer to the commit message, e.g., BREAKING CHANGE or Refs"
+#USAGE flag "--dry-run" help="Show what would be committed without actually committing"
+#USAGE flag "--no-stage" help="Skip staging changes"
+#USAGE flag "--auto" help="Auto-detect commit type based on changes"
+#USAGE flag "--template <template>" help="Use a commit template"
+#USAGE flag "--config <file>" help="Use custom configuration file"
+#USAGE flag "--emoji" help="Add emoji to commit messages"
+#USAGE flag "--ticket <ticket>" help="Reference a ticket/issue number"
+#USAGE flag "--co-author <author>" help="Add co-author to commit"
+#USAGE flag "--amend" help="Amend the last commit"
+#USAGE flag "--gpg-sign" help="GPG sign the commit"
+#USAGE flag "--list" help="List available commit types" long_help="List all available commit types for selection"
+
+require 'shellwords'
+require 'optparse'
+require 'json'
+require 'yaml'
+require 'fileutils'
+
+# Conventional Commits specification compliant types
+COMMIT_TYPES = {
+  'feat' => { emoji: '✨', desc: 'A new feature' },
+  'fix' => { emoji: '🐛', desc: 'A bug fix' },
+  'docs' => { emoji: '📚', desc: 'Documentation only changes' },
+  'style' => { emoji: '💎', desc: 'Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)' },
+  'refactor' => { emoji: '♻️', desc: 'A code change that neither fixes a bug nor adds a feature' },
+  'test' => { emoji: '🚨', desc: 'Adding missing tests or correcting existing tests' },
+  'chore' => { emoji: '🔧', desc: 'Changes to the build process or auxiliary tools and libraries' },
+  'revert' => { emoji: '⏪', desc: 'Reverts a previous commit' },
+  'ci' => { emoji: '👷', desc: 'Changes to our CI configuration files and scripts' },
+  'build' => { emoji: '📦', desc: 'Changes that affect the build system or external dependencies' },
+  'perf' => { emoji: '⚡', desc: 'A code change that improves performance' }
+}.freeze
+
+# Configuration class with project-level support
+class CommitConfig
+  DEFAULT_CONFIG = {
+    'emoji' => false,
+    'auto_stage' => true,
+    'confirm_by_default' => true,
+    'max_summary_length' => 50,
+    'max_line_length' => 72,
+    'scopes' => [],
+    'templates' => {},
+    'custom_types' => {},
+    'breaking_change_footer' => true,
+    'scope_case' => 'lowercase' # lowercase, uppercase, camelCase
+  }.freeze
+
+  attr_reader :config
+
+  def initialize(config_file = nil)
+    @custom_config_file = config_file
+    @config = load_merged_config
+  end
+
+  private
+
+  def load_merged_config
+    # Start with default config
+    merged_config = DEFAULT_CONFIG.dup
+
+    # Load global config
+    global_config = load_config_file(global_config_path)
+    merged_config.merge!(global_config) if global_config
+
+    # Load project config (overrides global)
+    project_config = load_config_file(project_config_path)
+    merged_config.merge!(project_config) if project_config
+
+    # Load custom config file (overrides all)
+    if @custom_config_file
+      custom_config = load_config_file(@custom_config_file)
+      merged_config.merge!(custom_config) if custom_config
+    end
+
+    merged_config
+  end
+
+  def global_config_path
+    File.expand_path('~/.config/commit/config.yml')
+  end
+
+  def project_config_path
+    # Look for .commit.yml in git root
+    git_root = `git rev-parse --show-toplevel 2>/dev/null`.chomp
+    return nil if git_root.empty?
+
+    File.join(git_root, '.commit.yml')
+  end
+
+  def load_config_file(path)
+    return nil unless path && File.exist?(path)
+
+    begin
+      YAML.load_file(path) || {}
+    rescue => e
+      log_error("Failed to load config from #{path}: #{e.message}")
+      nil
+    end
+  end
+
+  def log_error(message)
+    puts "🚨 [CONFIG ERROR] #{message}"
+  end
+end
+
+# Main commit tool class
+class ConventionalCommit
+  attr_reader :options, :config
+
+  def initialize
+    @options = {}
+    @config = nil
+    @verbose = false
+    @dry_run = false
+  end
+
+  def run
+    parse_arguments
+    setup_config
+    check_dependencies
+    check_git_repo
+
+    return list_commit_types if @options[:list]
+
+    execute_commit_flow
+  end
+
+  private
+
+  def parse_arguments
+    OptionParser.new do |opts|
+      opts.banner = "Usage: #{$0} [options]"
+
+      opts.on('-h', '--help', 'Display this help message') do
+        puts opts
+        puts "\nCommit Types (Conventional Commits v1.0.0):"
+        COMMIT_TYPES.each do |type, info|
+          puts "  #{type.ljust(10)} #{info[:emoji]} #{info[:desc]}"
+        end
+        puts "\nConfiguration:"
+        puts "  Global: ~/.config/commit/config.yml"
+        puts "  Project: .commit.yml (in git root)"
+        exit
+      end
+
+      # Short flags only for common options
+      opts.on('-t', '--type TYPE', COMMIT_TYPES.keys, 'Type of commit') do |type|
+        @options[:type] = type
+      end
+
+      opts.on('-s', '--scope SCOPE', 'Optional scope for the commit') do |scope|
+        @options[:scope] = scope
+      end
+
+      opts.on('-m', '--message MESSAGE', 'Commit message summary') do |message|
+        @options[:message] = message
+      end
+
+      opts.on('-d', '--description DESCRIPTION', 'Detailed description of the commit') do |description|
+        @options[:description] = description
+      end
+
+      opts.on('-c', '--confirm', 'Confirm commit') do
+        @options[:confirm] = true
+      end
+
+      opts.on('-p', '--prompt', 'Prompt for commit message details') do
+        @options[:prompt] = true
+      end
+
+      opts.on('-v', '--verbose', 'Verbose output') do
+        @verbose = true
+      end
+
+      # Long flags only for less common options
+      opts.on('--summary SUMMARY', 'Summary of the commit') do |summary|
+        @options[:summary] = summary
+      end
+
+      opts.on('--footer FOOTER', 'Footer for the commit message') do |footer|
+        @options[:footer] = footer
+      end
+
+      opts.on('--breaking [yes/no]', %w[yes no], 'Indicate if this is a breaking change') do |breaking|
+        @options[:breaking] = breaking == 'yes'
+      end
+
+      opts.on('--dry-run', 'Show what would be committed without actually committing') do
+        @dry_run = true
+      end
+
+      opts.on('--no-stage', 'Skip staging changes') do
+        @options[:no_stage] = true
+      end
+
+      opts.on('--auto', 'Auto-detect commit type based on changes') do
+        @options[:auto] = true
+      end
+
+      opts.on('--template TEMPLATE', 'Use a commit template') do |template|
+        @options[:template] = template
+      end
+
+      opts.on('--config FILE', 'Use custom configuration file') do |file|
+        @options[:config_file] = file
+      end
+
+      opts.on('--emoji', 'Add emoji to commit messages') do
+        @options[:emoji] = true
+      end
+
+      opts.on('--ticket TICKET', 'Reference a ticket/issue number') do |ticket|
+        @options[:ticket] = ticket
+      end
+
+      opts.on('--co-author AUTHOR', 'Add co-author to commit') do |author|
+        @options[:co_authors] ||= []
+        @options[:co_authors] << author
+      end
+
+      opts.on('--amend', 'Amend the last commit') do
+        @options[:amend] = true
+      end
+
+      opts.on('--gpg-sign', 'GPG sign the commit') do
+        @options[:gpg_sign] = true
+      end
+
+      opts.on('--list', 'List available commit types') do
+        @options[:list] = true
+      end
+    end.parse!
+  end
+
+  def setup_config
+    @config = CommitConfig.new(@options[:config_file])
+    log("Loaded configuration from multiple sources")
+    log("Config: #{@config.config.inspect}") if @verbose
+  end
+
+  def check_dependencies
+    return if ARGV.include?('--help') || ARGV.include?('-h')
+
+    unless system('which gum > /dev/null 2>&1')
+      puts "🚨 Error: 'gum' is not installed. Please install it first:"
+      puts "  brew install gum"
+      puts "  # or"
+      puts "  go install github.com/charmbracelet/gum@latest"
+      exit 1
+    end
+  end
+
+  def check_git_repo
+    return if ARGV.include?('--help') || ARGV.include?('-h')
+
+    unless system('git rev-parse --git-dir > /dev/null 2>&1')
+      puts "🚨 Error: Not in a git repository"
+      exit 1
+    end
+  end
+
+  def list_commit_types
+    puts "📋 Available commit types (Conventional Commits v1.0.0):\n\n"
+    COMMIT_TYPES.each do |type, info|
+      puts "  #{info[:emoji]} #{type.ljust(10)} - #{info[:desc]}"
+    end
+    puts "\n📖 Specification: https://www.conventionalcommits.org/en/v1.0.0/"
+    puts
+  end
+
+  def execute_commit_flow
+    # Auto-detect type if requested
+    if @options[:auto]
+      @options[:type] = auto_detect_commit_type
+      log("Auto-detected commit type: #{@options[:type]}")
+    end
+
+    # Handle staging
+    stage_changes unless @options[:no_stage]
+
+    # Build commit message
+    commit_message = build_commit_message
+
+    # Validate and preview
+    validate_commit_message(commit_message)
+    preview_commit_message(commit_message)
+
+    # Execute or preview
+    if @dry_run
+      show_dry_run(commit_message)
+    else
+      execute_commit(commit_message)
+    end
+  end
+
+  def auto_detect_commit_type
+    # Analyze git diff to suggest commit type
+    diff_output = `git diff --cached --name-status`
+    files = diff_output.lines.map { |line| line.split("\t").last&.chomp }
+
+    return 'docs' if files.all? { |f| f&.match?(/\.(md|txt|rst|adoc)$/i) }
+    return 'test' if files.any? { |f| f&.match?(/test|spec|\/__tests?__\//i) }
+    return 'ci' if files.any? { |f| f&.match?(/\.github|\.gitlab|jenkinsfile|\.travis|\.circleci/i) }
+    return 'style' if files.all? { |f| f&.match?(/\.(css|scss|sass|less|styl)$/i) }
+    return 'build' if files.any? { |f| f&.match?(/package\.json|Cargo\.toml|pom\.xml|build\.gradle|Makefile|dockerfile/i) }
+
+    # Default to fix for bug-related keywords in diff
+    diff_content = `git diff --cached`
+    return 'fix' if diff_content.match?(/bug|error|issue|problem|crash|exception/i)
+
+    'feat' # Default
+  end
+
+  def stage_changes
+    return if @options[:no_stage]
+
+    log("Checking for unstaged changes...")
+    unstaged = `git status -s -uno`.lines.map(&:chomp)
+    return if unstaged.empty?
+
+    if @config.config['auto_stage']
+      log("Auto-staging all changes...")
+      system("git add .")
+      return
+    end
+
+    options = ["📦 Add all (git add .)", "📁 Select files", "⏭️  Skip staging"]
+    choice = run_gum("choose \"#{options.join('" "')}\" --header \"🔄 Changes to stage:\"")
+
+    case choice
+    when options[0]  # Add all
+      system("git add .")
+    when options[1]  # Select files
+      files = unstaged.map { |line| line.split(' ', 2)[1] }
+      selected = run_gum("choose --no-limit \"#{files.join('" "')}\" --header \"📁 Select files to stage:\"").split("\n")
+      system("git add #{selected.map { |f| Shellwords.shellescape(f) }.join(' ')}") unless selected.empty?
+    end
+  end
+
+  def build_commit_message
+    type = get_commit_type
+    scope = get_scope
+    breaking = get_breaking_change
+    summary = get_summary(type, scope, breaking)
+    description = get_description
+    footer = build_footer(breaking)
+
+    construct_conventional_message(type, scope, breaking, summary, description, footer)
+  end
+
+  def get_commit_type
+    return @options[:type] if @options[:type]
+
+    if @options[:template] && @config.config['templates'][@options[:template]]
+      return @config.config['templates'][@options[:template]]['type']
+    end
+
+    choices = COMMIT_TYPES.map do |type, info|
+      emoji_prefix = (@options[:emoji] || @config.config['emoji']) ? "#{info[:emoji]} " : ""
+      "#{emoji_prefix}#{type} - #{info[:desc]}"
+    end
+
+    choice = run_gum("choose \"#{choices.join('" "')}\" --header \"🏷️  Commit type (Conventional Commits):\"")
+    choice.split(' ').first.gsub(/[^a-z]/, '')
+  end
+
+  def get_scope
+    return format_scope(@options[:scope]) if @options[:scope]
+
+    # Suggest scopes from config or git history
+    suggested_scopes = @config.config['scopes'] + get_recent_scopes
+
+    if suggested_scopes.any?
+      choices = ["(no scope)"] + suggested_scopes.uniq
+      choice = run_gum("choose \"#{choices.join('" "')}\" --header \"🎯 Commit scope (optional):\"")
+      return nil if choice == "(no scope)"
+      return format_scope(choice)
+    end
+
+    scope = run_gum('input --placeholder "scope (optional, e.g., api, ui, auth)"')
+    scope.empty? ? nil : format_scope(scope)
+  end
+
+  def format_scope(scope)
+    return nil if scope.nil? || scope.empty?
+
+    case @config.config['scope_case']
+    when 'uppercase'
+      scope.upcase
+    when 'camelCase'
+      scope.split(/[-_\s]/).map.with_index { |word, i| i == 0 ? word.downcase : word.capitalize }.join
+    else # 'lowercase' (default)
+      scope.downcase
+    end
+  end
+
+  def get_recent_scopes
+    # Extract scopes from recent commits following conventional commits format
+    recent_commits = `git log --oneline -50 --pretty=format:"%s"`.lines
+    scopes = recent_commits.map do |commit|
+      # Match conventional commit format: type(scope): description
+      match = commit.match(/^\w+\(([^)]+)\):/)
+      match ? match[1] : nil
+    end.compact.uniq
+
+    scopes.first(10) # Limit to 10 most recent
+  end
+
+  def get_breaking_change
+    return @options[:breaking] if @options[:breaking] != nil
+
+    system('gum confirm "💥 Is this a breaking change?"')
+  end
+
+  def get_summary(type, scope, breaking)
+    return @options[:summary] || @options[:message] if @options[:summary] || @options[:message]
+
+    # Build the conventional commit prefix
+    scope_str = scope ? "(#{scope})" : ""
+    breaking_str = breaking ? "!" : ""
+    prefix = "#{type}#{scope_str}#{breaking_str}: "
+
+    max_length = @config.config['max_summary_length'] - prefix.length
+    placeholder = "describe the change (max #{max_length} chars)"
+
+    description = run_gum("input --placeholder \"#{placeholder}\"")
+
+    # Validate length
+    full_summary = prefix + description
+    if full_summary.length > @config.config['max_summary_length']
+      puts "⚠️  Warning: Summary exceeds #{@config.config['max_summary_length']} characters"
+    end
+
+    description
+  end
+
+  def get_description
+    return @options[:description] if @options[:description]
+
+    description = run_gum('write --placeholder="
+		📝 Detailed description (optional). Explain the motivation for this change and what was changed.
+	Example:
+- Why was this change necessary?
+- What does this change do?
+- Are there any side effects?"')
+    description.empty? ? nil : description
+  end
+
+  def build_footer(breaking_change = false)
+    footer_parts = []
+
+    # Add breaking change footer if configured and it's a breaking change
+    if breaking_change && @config.config['breaking_change_footer']
+      breaking_desc = run_gum('write --placeholder "Describe the breaking change"')
+      footer_parts << "BREAKING CHANGE: #{breaking_desc}" unless breaking_desc.empty?
+    end
+
+    # Add custom footer
+    if @options[:footer]
+      footer_parts << @options[:footer]
+    end
+
+    # Add ticket reference
+    if @options[:ticket]
+      footer_parts << "Refs: ##{@options[:ticket]}"
+    end
+
+    # Add co-authors
+    if @options[:co_authors]
+      @options[:co_authors].each do |author|
+        footer_parts << "Co-authored-by: #{author}"
+      end
+    end
+
+    # Interactive footer addition
+    if footer_parts.empty? && !@options[:footer]
+      if system('gum confirm "📎 Add footer (e.g., Refs, Co-authored-by)?"')
+        footer_type = run_gum('input --placeholder "Footer type (e.g., Refs, Closes, Co-authored-by)"')
+        footer_value = run_gum('write --placeholder "Footer value"')
+        footer_parts << "#{footer_type}: #{footer_value}" unless footer_type.empty?
+      end
+    end
+
+    footer_parts.empty? ? nil : footer_parts.join("\n")
+  end
+
+  def construct_conventional_message(type, scope, breaking, summary, description, footer)
+    # Build conventional commit format: type(scope)!: description
+    scope_str = scope ? "(#{scope})" : ""
+    breaking_str = breaking ? "!" : ""
+
+    # Add emoji if configured
+    emoji_prefix = (@options[:emoji] || @config.config['emoji']) ? "#{COMMIT_TYPES[type][:emoji]} " : ""
+
+    header = "#{emoji_prefix}#{type}#{scope_str}#{breaking_str}: #{summary}"
+
+    message = header
+    message += "\n\n#{description}" if description && !description.empty?
+    message += "\n\n#{footer}" if footer && !footer.empty?
+
+    message
+  end
+
+  def validate_commit_message(message)
+    lines = message.split("\n")
+    issues = []
+
+    # Validate conventional commit format
+    header = lines[0]
+    unless header.match(/^(\w+)?(\([^)]+\))?!?:\s.+/)
+      issues << "Header doesn't follow Conventional Commits format: type(scope): description"
+    end
+
+    # Check summary length
+    summary_length = header.length
+    if summary_length > @config.config['max_line_length']
+      issues << "Header line too long (#{summary_length}/#{@config.config['max_line_length']})"
+    elsif summary_length > @config.config['max_summary_length']
+      issues << "Header longer than recommended (#{summary_length}/#{@config.config['max_summary_length']})"
+    end
+
+    # Check for empty line after header if body exists
+    if lines.length > 1 && !lines[1].empty?
+      issues << "Missing empty line after header (required by Conventional Commits)"
+    end
+
+    # Check body line lengths
+    lines[2..-1]&.each_with_index do |line, i|
+      next if line.empty? # Skip empty lines
+      if line.length > @config.config['max_line_length']
+        issues << "Line #{i + 3} too long (#{line.length}/#{@config.config['max_line_length']})"
+      end
+    end
+
+    # Display issues
+    unless issues.empty?
+      puts "⚠️  Validation issues:"
+      issues.each { |issue| puts "   • #{issue}" }
+      puts
+    end
+
+    issues.empty?
+  end
+
+  def preview_commit_message(message)
+    puts "\n" + "═" * 70
+    puts "📋 CONVENTIONAL COMMIT PREVIEW"
+    puts "═" * 70
+
+    # Add line numbers and length indicators
+    message.split("\n").each_with_index do |line, i|
+      length_indicator = line.length > @config.config['max_line_length'] ? " ⚠️" : ""
+      line_type = case i
+                  when 0 then " [HEADER]"
+                  when 1 then line.empty? ? " [EMPTY]" : " [BODY]"
+                  else line.empty? ? " [EMPTY]" : " [BODY/FOOTER]"
+                  end
+      puts "#{(i + 1).to_s.rjust(2)}: #{line}#{length_indicator}#{line_type}"
+    end
+
+    puts "═" * 70
+    puts "📊 Stats: #{message.split("\n").first.length} chars (header), #{message.split("\n").length} lines"
+    puts "🔗 Spec: https://www.conventionalcommits.org/"
+    puts
+  end
+
+  def show_dry_run(message)
+    puts "🔍 DRY RUN - Would execute:"
+
+    cmd_parts = ["git commit"]
+    cmd_parts << "-S" if @options[:gpg_sign]
+    cmd_parts << "--amend" if @options[:amend]
+    cmd_parts << "-m #{Shellwords.shellescape(message)}"
+
+    puts "   #{cmd_parts.join(' ')}"
+    puts
+    puts "📝 Full command would be:"
+    puts "   #{cmd_parts.join(' \\\n      ')}"
+  end
+
+  def execute_commit(message)
+    should_commit = if @options[:confirm] == false
+      false
+    elsif @options[:confirm] == true || @config.config['confirm_by_default']
+      system("gum confirm \"✅ Commit changes?\"")
+    else
+      true
+    end
+
+    return puts "❌ Commit cancelled." unless should_commit
+
+    # Build git command
+    cmd_parts = ["git commit"]
+    cmd_parts << "-S" if @options[:gpg_sign]
+    cmd_parts << "--amend" if @options[:amend]
+    cmd_parts << "-m #{Shellwords.shellescape(message)}"
+
+    cmd = cmd_parts.join(' ')
+    log("Executing: #{cmd}")
+
+    if system(cmd)
+      puts "✅ Commit successful!"
+      show_commit_info
+    else
+      puts "❌ Commit failed!"
+      exit 1
+    end
+  end
+
+  def show_commit_info
+    return unless @verbose
+
+    puts "\n📊 Commit Info:"
+    puts "   Hash: #{`git rev-parse --short HEAD`.chomp}"
+    puts "   Author: #{`git log -1 --pretty=format:'%an <%ae>'`.chomp}"
+    puts "   Date: #{`git log -1 --pretty=format:'%ad'`.chomp}"
+  end
+
+  def run_gum(cmd)
+    log("Running gum: #{cmd}")
+    result = `gum #{cmd}`.chomp
+    log("Result: #{result}")
+    result
+  end
+
+  def log(message)
+    puts "🔍 [LOG] #{message}" if @verbose
+  end
+
+  def log_error(message)
+    puts "🚨 [ERROR] #{message}"
+  end
+end
+
+# Initialize and run
+if __FILE__ == $0
+  begin
+    ConventionalCommit.new.run
+  rescue Interrupt
+    puts "\n👋 Goodbye!"
+    exit 0
+  rescue => e
+    puts "🚨 Unexpected error: #{e.message}"
+    puts e.backtrace if ENV['DEBUG']
+    exit 1
+  end
+end

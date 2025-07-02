@@ -20,6 +20,9 @@ act = "latest"
 docker-cli = "latest"
 rust = "stable"
 usage = "latest"
+container-structure-test = "latest"
+stripe = "latest"
+packer = "latest"
 
 [task_config]
-includes = ["./.mise/tasks.toml","mise-tasks"]
+includes = ["./.mise/tasks.toml", "mise-tasks"]

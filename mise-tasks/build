@@ -9,7 +9,7 @@
 
 # Color table
 declare -A COLORS=(
-  [Red]="#FF0000"
+	[Red]="#FF0000"
   [Blue]="#0000FF"
   [Green]="#00FF00"
   [Yellow]="#FFFF00"
@@ -28,7 +28,7 @@ echo "selected build: $BUILD"
 pushd docker || return
 
 #gum spin --title.foreground=${COLORS[Purple]} --title.foreground=${COLORS[Purple]} --spinner.foreground=${COLORS[Orange]} --show-output --show-error --spinner dot --title "Building docker image $BUILD..." --
-docker buildx create --driver-opt default-load=true --driver-opt memory=6G --driver-opt memory-swap=10G --driver docker-container --name container --bootstrap --node container --platform linux/amd64,linux/arm64,windows/amd64,windows/arm64 
+docker buildx create --driver-opt default-load=true --driver-opt memory=6G --driver-opt memory-swap=10G --driver docker-container --name container --bootstrap --node container --platform linux/amd64,linux/arm64,windows/amd64,windows/arm64
 docker bake --builder container --allow=fs=/var/local/buildx-cache --allow=fs.read=.. -f vars.hcl -f docker-bake.hcl "$BUILD" || {
   echo "Failed to build docker image $BUILD"
   exit 1
