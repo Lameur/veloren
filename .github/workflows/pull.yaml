@@ -24,6 +24,7 @@ jobs:
       statuses: write
     steps:
       - name: install deps
-        run: apt install git git-lfs
+        run: sudo apt install git git-lfs
       - name: pull
         run: git submodule update --recursive
+
